@@ -1,115 +1,171 @@
-import bcrypt
-import time
-import sqlite3
 import os
+import sqlite3
+import string
+import time
+
+import bcrypt
 
 
-class user:
-    def __init__(self, username, password):
-        self.username = username
-        self.password = password
+class Database:
+    def __init__(self, file_pt: str) -> None:
+        self.file_pt = file_pt
 
-    def encryption(self):
-        salt = bcrypt.gensalt(rounds=15, prefix=b'2a')
+        if not os.path.exists(self.file_pt):
+            self.conn = sqlite3.connect("user.db")
+            self.__generate_db()
+        else:
+            self.conn = sqlite3.connect("user.db")
+
+    def __generate_db(self) -> None:
+        """Generate the tables required."""
+        with self.conn:
+            cur = self.conn.cursor()
+            cur.execute(
+                """
+                CREATE TABLE user (
+                    username text,
+                    password blob
+                );
+            """
+            )
+
+    @staticmethod
+    def encrypt_pass(password: str) -> bytes:
+        """Encrypt password"""
+        salt = bcrypt.gensalt(rounds=15, prefix=b"2a")
         hashed_password = bcrypt.hashpw(password.encode(), salt)
         return hashed_password
 
-    def check_username(username):
-        file_path = "user.db"
-        if os.path.exists(file_path):
-            pass
-        else:
-            conn = sqlite3.connect("user.db")
-            cur = conn.cursor()
-            cur.execute("""CREATE TABLE user (
-                username text,
-                password blob
-                )""")
-        conn = sqlite3.connect("user.db")
-        cur = conn.cursor()
-        sql = "SELECT COUNT(*) FROM user WHERE username =?"
-        check_user = cur.execute(sql, (username,))
-        count = cur.fetchone()[0] > 0
-        if count == True:
-            print("you already register in our program")
-            exit()
+    def log_in(self) -> None:
+        """Login to account."""
+        tries = 0
 
-    def storge(username, hashed_password):
-        conn = sqlite3.connect('user.db')
-        cur = conn.cursor()
-        sql = """INSERT INTO user VALUES (?, ?)"""
-        cur.execute(sql, (username, hashed_password))
-        conn.commit()
-        conn.close()
-        print('down')
+        while tries < 3:
+            username = input("Enter your username > ")
 
-    def log_in(username, password, wrong_time):
-        if wrong_time < 3:
-            conn = sqlite3.connect('user.db')
-            cur = conn.cursor()
-            sql = ("SELECT * FROM user WHERE username =?")
-            check_user = cur.execute(sql, (username,))
-            if check_user:
-                hashed_password = (cur.fetchone()[1])
-                result = bcrypt.checkpw(password.encode(), hashed_password)
-                if result == True:
-                    print("Welcome %s" % (username))
-                    return True
+            cur = self.conn.cursor()
+
+            try:
+                hashed_password: bytes = cur.execute(
+                    "SELECT password FROM user WHERE username =?", (username,)
+                ).fetchone()[0]
+            except TypeError:
+                print("User does not exist!")
+                tries += 1
+                continue
+
+            password = input("Give me your password > ")
+
+            is_valid = bcrypt.checkpw(password.encode(), hashed_password)
+
+            if is_valid:
+                print(f"Welcome {username}!")
+                return
+
+            tries += 1
+            print("username or password was wrong")
+
+        print("You're trying too much, please give some break.")
+
+    def sign_up(self) -> None:
+        username = self.__sign_up_get_username()
+        password = self.__sign_up_get_password()
+        self.__sign_up_insert(username, password)
+
+    def __sign_up_get_username(self) -> str:
+        """Gets a valid username without invalid characters and checks if it exists in db."""
+
+        while True:
+            username = input("Give me your username > ")
+
+            if len(username) < 5 and len(username) > 15:
+                print("Your username is must have between 5 and 15 characters.")
+                continue
+
+            if any(num in username for num in string.punctuation):
+                print("Your username must not have punctuations.")
+                continue
+
+            if any(num in username for num in string.whitespace):
+                print("Your username must not have whitespace.")
+                continue
+
+            cur = self.conn.cursor()
+            user_count = cur.execute(
+                "SELECT COUNT(*) FROM user WHERE username =?",
+                (username,),
+            ).fetchone()[0]
+
+            if user_count > 0:
+                print("User is already registered in our program.")
+
+                answer = input("Wanna try again (y, n) > ").lower()
+                if answer == "n":
+                    # Just to jump outside when user doesn't want to register
+                    raise KeyboardInterrupt
+
+            else:
+                break
+
+        return username
+
+    @staticmethod
+    def __sign_up_get_password() -> str:
+        """Gets a valid password from the user."""
+
+        while True:
+            password = input("Give me your password > ")
+
+            if len(password) >= 8:
+                if [char in string.digits for char in password].count(True) >= 4:
+                    if [char in string.ascii_letters for char in password].count(True) >= 4:
+                        return password
+                    else:
+                        print("Your password must at least have 4 letters.")
                 else:
-                    print("username or password was wrong")
+                    print("Your password must at least have 4 digits.")
             else:
-                print("username or password was wrong")
-        else:
-            print("you tring too much please give some break")
+                print("Your password is too short (Valid password is 8 charcters).")
+
+    def __sign_up_insert(self, username: str, password: str):
+        """Inserts the username and password to db"""
+        hashed_password = self.encrypt_pass(password)
+        with self.conn:
+            cur = self.conn.cursor()
+            cur.execute("INSERT INTO user VALUES (?, ?);", (username, hashed_password))
+
+        print("Sign up done!")
+
+
+def main() -> None:
+    print("Welcome!")
+
+    while True:
+        db = Database("user.db")
+
+        try:
+            choice = input(
+                "Do you want log-in or register?? (log, reg) > "
+            ).lower()
+        except KeyboardInterrupt:
+            print("\n\nGoodbye :)")
             exit()
 
-    def chech_passwords(password):
-        if len(password) < 8:
-            print(
-                "your password is too short (8 charcter )please choice a betther password ")
-        else:
-            has_letters = False
-            has_numbers = False
-            for char in password:
-                if char.isalpha():
-                    has_letters = True
-                elif char.isdigit():
-                    has_numbers = True
-            if not has_letters or not has_numbers:
-                print("Password is too weak. It must contain both letters and numbers.")
-                return has_letters and has_numbers
-            else:
-                return True
+        allowed_for_reg = ["register", "reg", "sign", "signin", "sign_in"]
+        allowed_for_log = ["login", "log", "log_in", "log in", "in"]
+
+        if choice in allowed_for_reg:
+            try:
+                db.sign_up()
+            except KeyboardInterrupt:
+                print("\nYou cancelled the sign up process.")
+
+        elif choice in allowed_for_log:
+            try:
+                db.log_in()
+            except KeyboardInterrupt:
+                print("\nYou cancelled the login process.")
 
 
-while True:
-
-    choice = input("welcome do you want log-in or register ??:")
-    allowed_for_reg = ["register", "reg", "sign", "signin", "sign_in"]
-    allowed_for_log = ["login", "log", "log_in", "log in", "in"]
-    choice = choice.lower()
-    if choice in allowed_for_reg:
-        username = input('Give me your username: ')
-        user.check_username(username)
-        while True:
-            password = input('Give me your password: ')
-            check_up = user.chech_passwords(password)
-            if check_up == True:
-                break
-        hashed_password = user.encryption(password)
-        user.storge(username, hashed_password)
-        break
-
-    elif choice in allowed_for_log:
-        wrong_time = 0
-        while True:
-            username = input('Give me your username: ')
-            password = input('Give me your password: ')
-            result = user.log_in(username, password, wrong_time)
-            if result == True:
-                break
-            else:
-                wrong_time += 1
-        break
-    else:
-        print('input wrong')
+if __name__ == "__main__":
+    main()
