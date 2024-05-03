@@ -49,7 +49,7 @@ class user:
             cur = conn.cursor()
             sql = ("SELECT * FROM user WHERE username =?")
             check_user = cur.execute(sql, (username,))
-            if check_user == True:
+            if check_user:
                 hashed_password = (cur.fetchone()[1])
                 result = bcrypt.checkpw(password.encode(), hashed_password)
                 if result == True:
@@ -64,7 +64,7 @@ class user:
             exit()
 
     def chech_passwords(password):
-        if len(password) <= 8:
+        if len(password) < 8:
             print(
                 "your password is too short (8 charcter )please choice a betther password ")
         else:
